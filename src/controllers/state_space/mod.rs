@@ -26,9 +26,9 @@
 //!     let y = fem_ss
 //!         .inputs(vec![jar::OSSM1Lcl6F::with(vec![0f64; 42])])?
 //!         .step()?
-//!         .outputs()?;
+//!         .outputs();
 //!     assert_eq!(
-//!         Result::<Vec<f64>, Box<dyn std::error::Error>>::from(y.unwrap()[0].clone())?
+//!         Option::<Vec<f64>>::from(&y.unwrap()[0]).unwrap()
 //!             .iter()
 //!             .sum::<f64>(),
 //!         0f64
@@ -38,7 +38,7 @@
 //! ```
 
 use crate::fem;
-use crate::{io::Tags, IOTags, DOS, IO};
+use crate::{io::Tags, IOTags, DOS, IO, DOSError};
 use log;
 use nalgebra as na;
 use rayon::prelude::*;
@@ -391,7 +391,7 @@ impl DOS for DiscreteModalSolver<Exponential> {
             .collect();
         Ok(self)
     }
-    fn outputs(&mut self) -> Result<Option<Vec<IO<Vec<f64>>>>, Box<dyn std::error::Error>> {
+    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>>{
         let mut pos = 0;
         self.y_tags
             .iter()
@@ -399,7 +399,7 @@ impl DOS for DiscreteModalSolver<Exponential> {
             .map(|(t, n)| {
                 let io = IO::<Vec<f64>>::from((t, self.y[pos..pos + n].to_vec()));
                 pos += n;
-                Ok(Some(io))
+                Some(io)
             })
             .collect()
     }

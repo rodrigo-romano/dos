@@ -2,15 +2,17 @@
 //!
 //! Provides the definitions for all the inputs and outputs used by DOS
 
-use super::wind_loads;
+use super::{wind_loads,DOSError};
 use core::fmt::Debug;
 use serde::Serialize;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Clone, Debug)]
 pub enum IOError {
-    #[error("No IO data (None)")]
-    NoneData,
+    Missing(String),
+    Empty,
+    FileNotFound,
+    PickleRead,
+    Outputs,
 }
 
 macro_rules! build_io {
@@ -44,12 +46,15 @@ macro_rules! build_io {
                 }
             }
         }
-        impl<T,U: Iterator<Item=T>> From<&mut IO<U>> for Result<Option<IO<T>>,Box<dyn std::error::Error>> {
+        impl<T,U: Iterator<Item=T>> From<&mut IO<U>> for Option<IO<T>> {
             /// Converts a `IO<T>` into an `Option<T>`
             fn from(io: &mut IO<U>) -> Self {
                 match io {
-                    $(IO::$variant{ data: Some(data)} => Ok(Some(IO::$variant{ data: Some(data.next().ok_or_else(|| "Empty")?)})),)+
-                        $(IO::$variant{ data: None} => Err(Box::new(IOError::NoneData)),)+
+                    $(IO::$variant{ data: Some(data)} => match data.next() {
+                        Some(data) => Some(IO::$variant{ data: Some(data)}),
+                        None => None
+                    },)+
+                        $(IO::$variant{ data: None} => None,)+
                 }
             }
         }

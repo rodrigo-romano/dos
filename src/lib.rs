@@ -23,21 +23,13 @@ pub mod telltale;
 pub mod wind_loads;
 pub mod error;
 
-use error::Error;
+use error::DOSError;
 use fem;
 use io::IO;
 #[doc(inline)]
 pub use telltale::DataLogging;
 #[doc(inline)]
 pub use wind_loads::{WindLoading, WindLoads};
-
-/*
-#[derive(Error, Debug)]
-pub enum DosError {
-    #[error("DOS failed stepping the component")]
-    Step(),
-}
- */
 
 /// Used to get the list of inputs or outputs
 pub trait IOTags {
@@ -49,15 +41,15 @@ pub trait IOTags {
 /// Used to glue together the different components of an end-to-end model
 pub trait DOS {
     /// Computes and returns a vector outputs from a model component
-    fn outputs(&mut self) -> Result<Option<Vec<IO<Vec<f64>>>>, Box<dyn std::error::Error>>;
+    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>>;
     /// Passes a vector of input data to a model component
     fn inputs(&mut self, data: Vec<IO<Vec<f64>>>) -> Result<&mut Self, Box<dyn std::error::Error>>;
     /// Updates the state of a model component for one time step
-    fn step(&mut self) -> Result<&mut Self, Error>
+    fn step(&mut self) -> Result<&mut Self, DOSError<()>>
     where
         Self: Sized + Iterator,
     {
-        self.next().and(Some(self)).ok_or_else(|| Error::new(error::DOS::Step, "Failed stepping the component"))
+        self.next().and(Some(self)).ok_or_else(|| DOSError::Step)
     }
     /// Combines `inputs`, `step` and `outputs` in a single method
     ///
@@ -69,6 +61,6 @@ pub trait DOS {
     where
         Self: Sized + Iterator,
     {
-        self.inputs(data)?.step()?.outputs()
+        Ok(self.inputs(data)?.step()?.outputs())
     }
 }

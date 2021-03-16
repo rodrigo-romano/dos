@@ -18,9 +18,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let y = fem_ss
         .inputs(vec![jar::OSSM1Lcl6F::with(vec![0f64; 42])])?
         .step()?
-        .outputs()?;
+        .outputs();
     assert_eq!(
-        Result::<Vec<f64>, Box<dyn std::error::Error>>::from(y.unwrap()[0].clone())?
+        Option::<Vec<f64>>::from(&y.unwrap()[0]).unwrap()
             .iter()
             .sum::<f64>(),
         0f64

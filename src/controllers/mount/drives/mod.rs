@@ -102,8 +102,8 @@ impl<'a> DOS for Controller<'a> {
             Err("Either mount drive controller CMD, OSSAzDriveD, OSSElDriveD or OSSGIRDriveD not found".into())
         }
     }
-    fn outputs(&mut self) -> Result<Option<Vec<IO<Vec<f64>>>>, Box<dyn std::error::Error>> {
-        Ok(Some(vec![
+    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>> {
+        Some(vec![
             IO::OSSAzDriveF {
                 data: Some(Vec::<f64>::from(&self.oss_az_drive_f)),
             },
@@ -113,6 +113,6 @@ impl<'a> DOS for Controller<'a> {
             IO::OSSGIRDriveF {
                 data: Some(Vec::<f64>::from(&self.oss_gir_drive_f)),
             },
-        ]))
+        ])
     }
 }

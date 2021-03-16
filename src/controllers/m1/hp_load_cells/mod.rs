@@ -50,9 +50,9 @@ impl<'a> DOS for Controller<'a> {
             Err("Either mount drive controller OSSHardpointD or M1HPCmd not found".into())
         }
     }
-    fn outputs(&mut self) -> Result<Option<Vec<IO<Vec<f64>>>>, Box<dyn std::error::Error>> {
-        Ok(Some(vec![IO::M1HPLC {
+    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>> {
+        Some(vec![IO::M1HPLC {
             data: Some(Vec::<f64>::from(&self.m1_hp_lc)),
-        }]))
+        }])
     }
 }

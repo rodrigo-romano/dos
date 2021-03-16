@@ -1,53 +1,38 @@
-#[derive(Clone, Debug)]
-pub enum WindLoads {
-    Empty,
-    FileNotFound,
-    PickleRead,
-    Outputs,
-}
+use std::fmt;
 
-#[derive(Clone, Debug)]
-pub enum DOS {
-    Loads(WindLoads),
+/// The main types of DOS errors
+#[derive(Debug)]
+pub enum DOSError<T: fmt::Debug> {
+    Component(T),
     Outputs,
     Inputs,
     Step,
-    IO,
+    IO(Box<dyn std::error::Error>),
 }
 
-#[derive(Clone, Debug)]
-pub struct Error {
-    /// Describes the kind of error that occurred.
-    kind: DOS,
-    /// More explanation of error that occurred.
-    message: String,
+impl<T: fmt::Debug> From<std::io::Error> for DOSError<T> {
+    fn from(e: std::io::Error) -> DOSError<T> {
+        DOSError::IO(Box::new(e))
+    }
 }
 
-impl Error {
-    pub fn new(kind: DOS, message: &str) -> Error {
-        Error {
-            kind: kind,
-            message: message.to_owned(),
+impl<T: fmt::Debug> From<serde_pickle::Error> for DOSError<T> {
+    fn from(e: serde_pickle::Error) -> DOSError<T> {
+        DOSError::IO(Box::new(e))
+    }
+}
+
+impl<T: fmt::Debug> fmt::Display for DOSError<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use DOSError::*;
+        match self {
+            Inputs => write!(f, "DOS Inputs failed"),
+            Outputs => write!(f, "DOS Outputs failed"),
+            Step => write!(f, "DOS Step failed"),
+            Component(component) => component.fmt(f),
+            IO(error) => error.fmt(f),
         }
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
-        Error::new(DOS::IO, &format!("{}", e))
-    }
-}
-
-impl From<serde_pickle::Error> for Error {
-    fn from(e: serde_pickle::Error) -> Error {
-        Error::new(DOS::IO, &format!("{}", e))
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}: {}", self.kind, self.message)
-    }
-}
-
-impl std::error::Error for Error {}
+impl<T: fmt::Debug> std::error::Error for DOSError<T> {}

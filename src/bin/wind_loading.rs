@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // FEEDBACK LOOP
     let mut mount_drives_cmd = None;
-    while let Ok(Some(mut fem_forces)) = wind_loading.outputs() {
+    while let Some(mut fem_forces) = wind_loading.outputs() {
         data.step()?;
         // Mount Drives
         mnt_drives
@@ -148,7 +148,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 OSSGIRDriveD::with(vec![0f64; 4]),
             ]))?
             .step()?
-            .outputs()?
+            .outputs()
             .map(|mut x| {
                 fem_forces.append(&mut x);
             });
@@ -156,13 +156,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ys = fem
             .inputs(fem_forces)?
             .step()?
-            .outputs()?
+            .outputs()
             .ok_or("FEM output is empty")?;
         // Mount Controller
         mount_drives_cmd = mnt_ctrl
             .inputs(ys[2..].to_vec())?
             .step()?
-            .outputs()?
+            .outputs()
             .and_then(|mut x| {
                 x.extend_from_slice(&ys[2..]);
                 Some(x)

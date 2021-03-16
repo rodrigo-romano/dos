@@ -74,10 +74,10 @@ impl<'a> DOS for Controller<'a> {
             Err("Either mount controller controller OSSAzDriveD, OSSElDriveD or OSSGIRDriveD not found".into())
         }
     }
-    fn outputs(&mut self) -> Result<Option<Vec<IO<Vec<f64>>>>, Box<dyn std::error::Error>> {
-        Ok(Some(vec![IO::MountCmd {
+    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>> {
+        Some(vec![IO::MountCmd {
             data: Some(Vec::<f64>::from(&self.cmd)),
-        }]))
+        }])
     }
 }
 

@@ -38,8 +38,8 @@
 //! $$
 //! where
 //! $$ A_d = \exp(A\tau),$$
-//! $$ B_d = \tau^{-1/2}A^{-1}(A_d-I)B,$$
-//! $$ C_d = \tau^{-1/2}C A^{-1}(A_d-I)$$
+//! $$ B_d = A^{-1}(A_d-I)B,$$
+//! $$ C_d = C$$
 //! and $`\tau`$ is the sample time.
 //!
 //! [$`A_d = \exp(A\tau)`$](https://www.wolframalpha.com/input/?i=Matrixexp%5B%7B%7B0%2Ct%7D%2C%7B-tx%5E2%2C-2txy%7D%7D%5D)=
@@ -114,7 +114,7 @@ impl Exponential {
             (x * x * (ezpxy - ezmxy) / (2. * z)).re,
             ((zmxy * ezmxy + zpxy * ezpxy) / (2. * z)).re,
         );
-        let bd = ia * (ad - i) / tau.sqrt();
+        let bd = ia * (ad - i);// / tau.sqrt();
         let n = continuous_cc.len();
         Self {
             tau,
@@ -129,9 +129,9 @@ impl Exponential {
     /// Returns the state space model output
     pub fn solve(&mut self, u: &[f64]) -> &[f64] {
         let (x0, x1) = self.x;
-        let s = self.m.0 * x0 + self.m.1 * x1;
+        //let s = self.m.0 * x0 + self.m.1 * x1;
         self.y.iter_mut().zip(self.c.iter()).for_each(|(y, c)| {
-            *y = c * s;
+            *y = c * x0;
         });
         let v = self.b.iter().zip(u).fold(0., |s, (b, u)| s + b * u);
         self.x.0 = self.q.0 * x0 + self.q.1 * x1 + self.m.1 * v;
