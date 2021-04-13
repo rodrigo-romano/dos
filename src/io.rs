@@ -2,17 +2,14 @@
 //!
 //! Provides the definitions for all the inputs and outputs used by DOS
 
-use super::{wind_loads,DOSError};
+use super::{wind_loads, DOSError};
 use core::fmt::Debug;
 use serde::Serialize;
+use std::ops::{AddAssign, Index, IndexMut, SubAssign};
 
 #[derive(Clone, Debug)]
 pub enum IOError {
     Missing(String),
-    Empty,
-    FileNotFound,
-    PickleRead,
-    Outputs,
 }
 
 macro_rules! build_io {
@@ -30,7 +27,7 @@ macro_rules! build_io {
                 }
             }
         }
-        impl<T> PartialEq<IO<T>> for IO<()> {
+        impl<T,U> PartialEq<IO<T>> for IO<U> {
             fn eq(&self, other: &IO<T>) -> bool {
                 match (self,other) {
                     $((IO::$variant{..},IO::$variant{..}) => true,)+
@@ -73,11 +70,15 @@ macro_rules! build_io {
                 }
             }
         }
-        impl<T: Debug> From<IO<T>> for Result<T,Box<dyn std::error::Error>> {
+        impl<T: Debug> From<IO<T>> for Result<T,DOSError<IOError>> {
             /// Converts a `IO<T>` into an `Option<T>`
             fn from(io: IO<T>) -> Self {
                 match io {
-                    $(IO::$variant{ data: values} => values.ok_or_else(|| format!("{:?} data missing",IO::<T>::$variant{data: None}).into())),+
+                    $(IO::$variant{ data: values} =>
+                      values.ok_or_else(||
+                                        //format!("{:?} data missing",IO::<T>::$variant{data: None}).into()
+                                        DOSError::Component(IOError::Missing(format!("{:?} data missing",IO::<T>::$variant{data: None})))
+                    )),+
                 }
             }
         }
@@ -105,6 +106,32 @@ macro_rules! build_io {
                 }
             }
         }
+        impl AddAssign<&IO<Vec<f64>>> for IO<Vec<f64>> {
+            fn add_assign(&mut self, other: &IO<Vec<f64>>) {
+                match self.clone() {
+                    $(IO::$variant{ data: Some(x)} => {
+                        Option::<Vec<f64>>::from(other).map(|y| {
+                            let z: Vec<_> = x.iter().zip(y).map(|(x,y)| x+y).collect();
+                            *self = IO::$variant{ data: Some(z)};
+                        });
+                    }),+
+                        _ => println!("Failed adding IO")
+                }
+            }
+        }
+        impl SubAssign<&IO<Vec<f64>>> for IO<Vec<f64>> {
+            fn sub_assign(&mut self, other: &IO<Vec<f64>>) {
+                match self.clone() {
+                    $(IO::$variant{ data: Some(x)} => {
+                        Option::<Vec<f64>>::from(other).map(|y| {
+                            let z: Vec<_> = x.iter().zip(y).map(|(x,y)| x-y).collect();
+                            *self = IO::$variant{ data: Some(z)};
+                        });
+                    }),+
+                        _ => println!("Failed substracting IO")
+                }
+            }
+        }
         pub mod jar {
             //! A DOS Inputs/Outputs builder
             use super::IO;
@@ -122,6 +149,17 @@ macro_rules! build_io {
             )+
         }
     };
+}
+impl<T> Index<IO<T>> for Vec<IO<T>> {
+    type Output = IO<T>;
+    fn index(&self, io: IO<T>) -> &Self::Output {
+        self.iter().position(|x| *x==io).map(|i| &self[i]).unwrap()
+    }
+}
+impl<T> IndexMut<IO<T>> for Vec<IO<T>> {
+    fn index_mut(&mut self, io: IO<T>) -> &mut Self::Output {
+        self.iter().position(|x| *x==io).map(move |i| &mut self[i]).unwrap()
+    }
 }
 macro_rules! io_match_fem {
     (inputs: ($($inputs_variant:ident),+), outputs: ($($outputs_variant:ident),+)) => {

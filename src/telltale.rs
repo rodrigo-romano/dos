@@ -1,14 +1,12 @@
-use crate::io::IO;
+use crate::{io::IO, DOSError};
 use std::collections::BTreeMap;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum TellTaleError {
-    #[error("Failed stepping entry index")]
     Step,
-    #[error("DOS inserting entry")]
     Tale,
 }
+type Result<T> = std::result::Result<T, DOSError<TellTaleError>>;
 
 pub struct TellTale {
     pub sampling_rate: f64,
@@ -17,21 +15,21 @@ pub struct TellTale {
     index: Option<usize>,
 }
 impl TellTale {
-    pub fn step(&mut self) -> Result<&mut Self, TellTaleError>
+    pub fn step(&mut self) -> Result<&mut Self>
     where
         Self: Sized + Iterator,
     {
         self.next()
             .and(Some(self))
-            .ok_or_else(|| TellTaleError::Step)
+            .ok_or_else(|| DOSError::Component(TellTaleError::Step))
     }
-    pub fn log(&mut self, tale: &IO<Vec<f64>>) -> Result<&mut Self, TellTaleError> {
+    pub fn log(&mut self, tale: &IO<Vec<f64>>) -> Result<&mut Self> {
         self.index
             .and_then(|i| {
                 self.entries.entry(i).or_default().push(tale.clone());
                 Some(())
             })
-            .ok_or(TellTaleError::Tale)?;
+            .ok_or(DOSError::Component(TellTaleError::Tale))?;
         Ok(self)
     }
     pub fn time_series(&self, key: IO<()>) -> IO<TimeSeries> {

@@ -55,6 +55,29 @@ macro_rules! loads {
                     $(Loads::$variant(io) => io),+
                 }
             }
+            pub fn decimate(&mut self, decimation_rate: usize) {
+                match self {
+                    $(Loads::$variant(io) => {
+                        let decimated: Vec<_> = io.iter()
+                            .step_by(decimation_rate)
+                            .cloned()
+                            .collect();
+                        *io = decimated;
+                    }),+
+                }
+            }
+            pub fn range(&mut self, min_index: usize, max_index: usize) {
+                match self {
+                    $(Loads::$variant(io) => {
+                        let ranged: Vec<_> = io.iter()
+                            .skip(min_index)
+                            .take(max_index-min_index)
+                            .cloned()
+                            .collect();
+                        *io = ranged;
+                    }),+
+                }
+            }
         }
     };
 }
@@ -105,6 +128,30 @@ impl WindLoads {
             .iter()
             .find_map(|x| x.as_ref().and_then(|x| Some(x.len())))
             .ok_or(DOSError::Component(WindLoadsError::Len))
+    }
+    pub fn range(mut self, t_min: f64, t_max: f64) -> Self {
+        let min_index = self.time.iter().position(|t| *t >= t_min).unwrap_or(0);
+        let max_index = self
+            .time
+            .iter()
+            .position(|t| *t >= t_max)
+            .unwrap_or(self.time.len());
+        self.loads
+            .iter_mut()
+            .filter_map(|x| x.as_mut())
+            .for_each(|x| {
+                x.range(min_index, max_index);
+            });
+        self
+    }
+    pub fn decimate(mut self, decimation_rate: usize) -> Self {
+        self.loads
+            .iter_mut()
+            .filter_map(|x| x.as_mut())
+            .for_each(|x| {
+                x.decimate(decimation_rate);
+            });
+        self
     }
     fn tagged_load(&self, io: &Tags) -> Result<Outputs> {
         match &self.n_sample {

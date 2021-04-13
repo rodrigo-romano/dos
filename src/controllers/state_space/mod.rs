@@ -10,7 +10,7 @@
 //! use fem::FEM;
 //! use std::path::Path;
 //! use simple_logger::SimpleLogger;
-//! 
+//!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     SimpleLogger::new().init().unwrap();
 //!     let sampling_rate = 1e3; // Hz
@@ -38,14 +38,16 @@
 //! ```
 
 use crate::fem;
-use crate::{io::Tags, IOTags, DOS, IO, DOSError};
+use crate::{
+    io::{IOError, Tags},
+    DOSError, IOTags, DOS, IO,
+};
 use log;
 use nalgebra as na;
 use rayon::prelude::*;
 use serde_pickle as pickle;
 use std::fs::File;
 use std::path::Path;
-use thiserror::Error;
 
 pub mod bilinear;
 #[doc(inline)]
@@ -54,17 +56,14 @@ pub mod exponential;
 #[doc(inline)]
 pub use exponential::Exponential;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum StateSpaceError {
-    #[error("No FEM inputs match DOS {0:?}")]
     FemInputs(Tags),
-    #[error("No FEM outputs match DOS {0:?}")]
     FemOutputs(Tags),
-    #[error("Missing {0}")]
     MissingArguments(String),
 }
 
-type ThisResult<T> = Result<T, StateSpaceError>;
+type Result<T> = std::result::Result<T, DOSError<StateSpaceError>>;
 type StateSpaceIO = Option<Vec<Tags>>;
 
 /// This structure is the state space model builder based on a builder pattern design
@@ -77,6 +76,7 @@ pub struct DiscreteStateSpace {
     zeta: Option<f64>,
     eigen_frequencies: Option<Vec<(usize, f64)>>,
     max_eigen_frequency: Option<f64>,
+    hankel_singular_values_threshold: Option<f64>,
 }
 impl From<fem::FEM> for DiscreteStateSpace {
     /// Creates a state space model builder from a FEM structure
@@ -104,7 +104,7 @@ impl DiscreteStateSpace {
     }
     /// Overwrites some eigen frequencies in Hz
     ///
-    /// Example 
+    /// Example
     /// ```rust
     /// // Setting the 1st 3 eigen values to 0
     /// fem_ss.eigen_frequencies(vec![(0,0.),(1,0.),(2,0.)])
@@ -188,7 +188,7 @@ impl DiscreteStateSpace {
         fem.keep_inputs(&inputs_idx).keep_outputs(&outputs_idx);
         println!("{}", fem);
     }
-    fn io2modes(fem: &fem::FEM, dos_inputs: &[Tags]) -> ThisResult<Vec<f64>> {
+    fn io2modes(fem: &fem::FEM, dos_inputs: &[Tags]) -> Result<Vec<f64>> {
         use fem::IO;
         let indices: Vec<u32> = dos_inputs
             .iter()
@@ -196,9 +196,9 @@ impl DiscreteStateSpace {
                 fem.inputs
                     .iter()
                     .find_map(|y| y.as_ref().and_then(|y| x.match_fem_inputs(y)))
-                    .ok_or(StateSpaceError::FemInputs(x.clone()))
+                    .ok_or(DOSError::Component(StateSpaceError::FemInputs(x.clone())))
             })
-            .collect::<ThisResult<Vec<Vec<IO>>>>()?
+            .collect::<Result<Vec<Vec<IO>>>>()?
             .iter()
             .flat_map(|v| {
                 v.iter().filter_map(|x| match x {
@@ -220,7 +220,7 @@ impl DiscreteStateSpace {
             })
             .collect())
     }
-    fn modes2io(fem: &fem::FEM, dos_outputs: &[Tags]) -> ThisResult<Vec<Vec<f64>>> {
+    fn modes2io(fem: &fem::FEM, dos_outputs: &[Tags]) -> Result<Vec<Vec<f64>>> {
         use fem::IO;
         let n = fem.n_modes();
         let q: Vec<_> = fem.modal_disp_to_outputs.chunks(n).collect();
@@ -230,9 +230,9 @@ impl DiscreteStateSpace {
                 fem.outputs
                     .iter()
                     .find_map(|y| y.as_ref().and_then(|y| x.match_fem_outputs(y)))
-                    .ok_or(StateSpaceError::FemOutputs(x.clone()))
+                    .ok_or(DOSError::Component(StateSpaceError::FemOutputs(x.clone())))
             })
-            .collect::<ThisResult<Vec<Vec<IO>>>>()?
+            .collect::<Result<Vec<Vec<IO>>>>()?
             .into_iter()
             .map(|v| {
                 v.into_iter()
@@ -250,21 +250,35 @@ impl DiscreteStateSpace {
             })
             .collect())
     }
+    /// Returns the Hankel singular value for a given eigen mode
+    pub fn hankel_singular_value(w: f64, z: f64, b: &[f64], c: &[f64]) -> f64 {
+        let norm_x = |x: &[f64]| x.iter().map(|x| x * x).sum::<f64>().sqrt();
+        0.25 * norm_x(b) * norm_x(c) / (w * z)
+    }
     /// Builds the state space discrete model
-    pub fn build(self) -> ThisResult<DiscreteModalSolver<Exponential>> {
+    pub fn build(self) -> Result<DiscreteModalSolver<Exponential>> {
         let tau = self.sampling.map_or(
-            Err(StateSpaceError::MissingArguments("sampling".to_owned())),
+            Err(DOSError::Component(StateSpaceError::MissingArguments(
+                "sampling".to_owned(),
+            ))),
             |x| Ok(1f64 / x),
         )?;
-        let mut fem = self
-            .fem
-            .map_or(Err(StateSpaceError::MissingArguments("FEM".to_owned())), Ok)?;
+        let mut fem = self.fem.map_or(
+            Err(DOSError::Component(StateSpaceError::MissingArguments(
+                "FEM".to_owned(),
+            ))),
+            Ok,
+        )?;
         let dos_inputs = self.u.map_or(
-            Err(StateSpaceError::MissingArguments("inputs".to_owned())),
+            Err(DOSError::Component(StateSpaceError::MissingArguments(
+                "inputs".to_owned(),
+            ))),
             Ok,
         )?;
         let dos_outputs = self.y.map_or(
-            Err(StateSpaceError::MissingArguments("outputs".to_owned())),
+            Err(DOSError::Component(StateSpaceError::MissingArguments(
+                "outputs".to_owned(),
+            ))),
             Ok,
         )?;
         Self::select_fem_io(&mut fem, &dos_inputs, &dos_outputs);
@@ -310,19 +324,40 @@ impl DiscreteStateSpace {
             }
             None => fem.proportional_damping_vec,
         };
-        let state_space: Vec<_> = (0..n_modes)
-            .map(|k| {
-                let b = forces_2_modes.row(k);
-                let c = modes_2_nodes.column(k);
-                Exponential::from_second_order(
-                    tau,
-                    w[k],
-                    zeta[k],
-                    b.clone_owned().as_slice().to_vec(),
-                    c.as_slice().to_vec(),
-                )
-            })
-            .collect();
+        let state_space: Vec<_> = match self.hankel_singular_values_threshold {
+            Some(hsv_t) => (0..n_modes)
+                .filter_map(|k| {
+                    let b = forces_2_modes.row(k).clone_owned();
+                    let c = modes_2_nodes.column(k);
+                    let hsv =
+                        Self::hankel_singular_value(w[k], zeta[k], b.as_slice(), c.as_slice());
+                    if hsv > hsv_t {
+                        Some(Exponential::from_second_order(
+                            tau,
+                            w[k],
+                            zeta[k],
+                            b.as_slice().to_vec(),
+                            c.as_slice().to_vec(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            None => (0..n_modes)
+                .map(|k| {
+                    let b = forces_2_modes.row(k).clone_owned();
+                    let c = modes_2_nodes.column(k);
+                    Exponential::from_second_order(
+                        tau,
+                        w[k],
+                        zeta[k],
+                        b.as_slice().to_vec(),
+                        c.as_slice().to_vec(),
+                    )
+                })
+                .collect(),
+        };
         Ok(DiscreteModalSolver {
             u: vec![0f64; forces_2_modes.ncols()],
             u_tags: dos_inputs,
@@ -381,17 +416,20 @@ impl Iterator for DiscreteModalSolver<Exponential> {
 }
 
 impl DOS for DiscreteModalSolver<Exponential> {
-    fn inputs(&mut self, data: Vec<IO<Vec<f64>>>) -> Result<&mut Self, Box<dyn std::error::Error>> {
+    fn inputs(
+        &mut self,
+        data: Vec<IO<Vec<f64>>>,
+    ) -> std::result::Result<&mut Self, Box<dyn std::error::Error>> {
         self.u = data
             .into_iter()
-            .map(|x| Result::<Vec<f64>, Box<dyn std::error::Error>>::from(x))
-            .collect::<Result<Vec<Vec<f64>>, Box<dyn std::error::Error>>>()?
+            .map(|x| std::result::Result::<Vec<f64>, DOSError<IOError>>::from(x))
+            .collect::<std::result::Result<Vec<Vec<f64>>, DOSError<IOError>>>()?
             .into_iter()
             .flatten()
             .collect();
         Ok(self)
     }
-    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>>{
+    fn outputs(&mut self) -> Option<Vec<IO<Vec<f64>>>> {
         let mut pos = 0;
         self.y_tags
             .iter()
